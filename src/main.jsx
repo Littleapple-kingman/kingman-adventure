@@ -118,12 +118,12 @@ function App() {
       if (!alive || player.slide > 0) return;
       // A second tap upgrades an active upward jump instead of delaying the first tap.
       if (power === 'high' && !player.onGround && player.vy < 0) {
-        player.vy = Math.min(player.vy, -18);
+        player.vy = Math.min(player.vy, -19.5);
         emit(player.x + 25, player.y + player.h, '#fff2b0', 5);
         return;
       }
       if (!player.onGround) return;
-      player.vy = power === 'high' ? -18 : -13.8;
+      player.vy = power === 'high' ? -19.5 : -15.5;
       player.onGround = false;
       emit(player.x + 25, player.y + player.h, '#fff2b0', 5);
     };
@@ -223,7 +223,7 @@ function App() {
       if (!w || !h) { raf = requestAnimationFrame(draw); return; }
       const dt = Math.min((time - (last || time)) / 16.667, 2.2);
       last = time; elapsed += dt / 60;
-      const speed = (challenge ? 5.1 : 4.2) + Math.min(5.8, elapsed * (challenge ? .115 : .085));
+      const speed = (challenge ? 4.7 : 3.7) + Math.min(4.8, elapsed * (challenge ? .09 : .065));
       const groundY = drawBackground(w, h, speed);
       player.x = Math.max(30, w * .19);
       if (!player.y) player.y = groundY - player.h;
@@ -239,13 +239,14 @@ function App() {
       score += speed * dt * .035;
 
       spawnClock += dt; pickupClock += dt;
-      const obstacleEvery = Math.max(53, (challenge ? 92 : 116) - elapsed * .25);
+      const obstacleEvery = Math.max(68, (challenge ? 104 : 132) - elapsed * .18);
       if (spawnClock > obstacleEvery) { spawnClock = 0; spawnObstacle(w, groundY, speed); }
       if (pickupClock > 72) { pickupClock = 0; spawnPickup(w, groundY); }
 
       const sliding = player.slide > 0;
-      const pw = sliding ? 68 : 54; const ph = sliding ? 34 : 70;
-      const pbox = { x: player.x + 5, y: player.y + player.h - ph, w: pw - 10, h: ph };
+      const pw = sliding ? 64 : 48; const ph = sliding ? 30 : 60;
+      // Slightly forgiving hitbox: the visible mascot can brush an obstacle without losing a heart.
+      const pbox = { x: player.x + 12, y: player.y + player.h - ph, w: pw - 20, h: ph - 5 };
       objects = objects.filter(o => {
         o.x -= speed * dt;
         if (o.type === 'pit') {
@@ -336,27 +337,20 @@ function App() {
     };
     let pointerStart = null;
     let lastTapAt = 0;
-    let holdTimer = null;
-    let holdingSlide = false;
     const onPointerDown = e => {
-      pointerStart = { x: e.clientX, y: e.clientY, at: performance.now() };
-      holdingSlide = false;
-      holdTimer = window.setTimeout(() => { holdingSlide = true; holdSlide(); }, 190);
+      e.preventDefault();
+      pointerStart = { x: e.clientX, y: e.clientY };
+      const now = performance.now();
+      // Jump immediately on touch-down; a quick second tap boosts the jump already in progress.
+      jump(now - lastTapAt < 280 ? 'high' : 'normal');
+      lastTapAt = now;
     };
     const onPointerUp = e => {
       if (!pointerStart) return;
-      if (holdTimer) window.clearTimeout(holdTimer);
       const dx = e.clientX - pointerStart.x; const dy = e.clientY - pointerStart.y;
-      const duration = performance.now() - pointerStart.at;
-      if (holdingSlide) { releaseSlide(); }
-      else if (Math.abs(dx) > 22 || Math.abs(dy) > 22) {
-        // Retain swipe-up as a convenience; swipe-down briefly triggers slide.
-        if (Math.abs(dy) > Math.abs(dx)) { if (dy < 0) jump(); else slide(); }
-      } else if (duration < 190) {
-        const now = performance.now();
-        if (now - lastTapAt < 280) jump('high');
-        else jump('normal');
-        lastTapAt = now;
+      // Swipe down remains a shortcut for sliding. Sliding can also be held with the button below.
+      if (Math.abs(dx) > 22 || Math.abs(dy) > 22) {
+        if (Math.abs(dy) > Math.abs(dx) && dy > 0) slide();
       }
       pointerStart = null;
     };
@@ -370,7 +364,6 @@ function App() {
       canvas.removeEventListener('pointerdown', onPointerDown);
       canvas.removeEventListener('pointerup', onPointerUp);
       canvas.removeEventListener('pointercancel', onPointerUp);
-      if (holdTimer) window.clearTimeout(holdTimer);
       engineRef.current = null;
     };
   }, [page, stage, mode, finishGame]);
@@ -390,7 +383,7 @@ function App() {
       {!supabase && <p className="status-note">โหมดเล่นในเครื่องพร้อมใช้งาน · ตารางคะแนนออนไลน์จะเปิดเมื่อเชื่อม Supabase</p>}
     </>}
     {page === 'stages' && <section className="page-section"><div className="section-heading"><div><p className="eyebrow">CHOOSE YOUR WORLD</p><h1>เลือกด่านผจญภัย</h1></div><button className="back-btn" onClick={() => setPage('home')}>← กลับ</button></div><div className="mode-switch"><button className={mode === 'normal' ? 'selected' : ''} onClick={() => setMode('normal')}>🌼 โหมดปกติ <small>หัวใจ 3 ดวง</small></button><button className={mode === 'challenge' ? 'selected challenge' : ''} onClick={() => setMode('challenge')}>🔥 โหมดท้าทาย <small>เร็วขึ้น · หัวใจ 2 ดวง</small></button></div><div className="stage-grid">{STAGES.map((s, i) => <article className={`stage-card stage-${i + 1}`} key={s.name}><div className="stage-art">{s.icon}</div><div className="stage-meta"><span>WORLD {String(i + 1).padStart(2, '0')}</span>{i + 1 <= unlocked ? <b>UNLOCKED</b> : <b className="locked">🔒 LOCKED</b>}</div><h3>{s.name}</h3><p>{i === 0 ? 'เริ่มต้นการเดินทางในป่ามหัศจรรย์' : i === 1 ? 'ระวังผลึกคริสตัลที่แวววาว' : i === 2 ? 'ฝ่าความร้อนแรงของภูเขาไฟ' : i === 3 ? 'วิ่งผ่านดินแดนหิมะเย็นฉ่ำ' : 'ผจญภัยสู่ปราสาทแห่ง KINGMAN'}</p><button disabled={i + 1 > unlocked} onClick={() => { setStage(i + 1); startGame(); }}>{i + 1 <= unlocked ? 'เข้าเล่นด่าน →' : 'ผ่านด่านก่อนหน้าเพื่อปลดล็อก'}</button></article>)}</div></section>}
-    {page === 'play' && <section className="play-section"><div className="play-heading"><div><p className="eyebrow">{mode === 'normal' ? '🌼 NORMAL MODE' : '🔥 CHALLENGE MODE'}</p><h2>{stageData.icon} {stageData.name}</h2></div><button className="exit-btn" onClick={() => { setPage('result'); setResult({ message: 'ออกจากการผจญภัย', cleared: false }); }}>ออกจากเกม</button></div><div className="game-frame"><div className="game-hud"><span>❤️ {hud.hearts}</span><span>🐢 {hud.shells}</span><span>⭐ {hud.score.toLocaleString()}</span><span>⚡ x{hud.combo}</span><span>📏 {hud.distance} m</span></div><canvas ref={canvasRef} className="game-canvas" aria-label="KINGMAN วิ่งผจญภัย"></canvas><div className="game-hint">แตะ 1 ครั้ง = กระโดด · แตะ 2 ครั้ง = กระโดดสูง · กดค้าง = สไลด์</div></div><div className="touch-controls"><button onClick={() => engineRef.current?.jump('normal')}>⬆️ <b>กระโดด</b></button><button onPointerDown={e => { e.currentTarget.setPointerCapture(e.pointerId); engineRef.current?.holdSlide(); }} onPointerUp={() => engineRef.current?.releaseSlide()} onPointerCancel={() => engineRef.current?.releaseSlide()} onContextMenu={e => e.preventDefault()}>⬇️ <b>กดค้างสไลด์</b></button></div></section>}
+    {page === 'play' && <section className="play-section"><div className="play-heading"><div><p className="eyebrow">{mode === 'normal' ? '🌼 NORMAL MODE' : '🔥 CHALLENGE MODE'}</p><h2>{stageData.icon} {stageData.name}</h2></div><button className="exit-btn" onClick={() => { setPage('result'); setResult({ message: 'ออกจากการผจญภัย', cleared: false }); }}>ออกจากเกม</button></div><div className="game-frame"><div className="game-hud"><span>❤️ {hud.hearts}</span><span>🐢 {hud.shells}</span><span>⭐ {hud.score.toLocaleString()}</span><span>⚡ x{hud.combo}</span><span>📏 {hud.distance} m</span></div><canvas ref={canvasRef} className="game-canvas" aria-label="KINGMAN วิ่งผจญภัย"></canvas><div className="game-hint">แตะหน้าจอ = กระโดดทันที · แตะซ้ำ = กระโดดสูง · ปัดลง/กดปุ่มค้าง = สไลด์</div></div><div className="touch-controls"><button onPointerDown={e => { e.preventDefault(); engineRef.current?.jump('normal'); }} onContextMenu={e => e.preventDefault()}>⬆️ <b>กระโดด</b></button><button onPointerDown={e => { e.currentTarget.setPointerCapture(e.pointerId); engineRef.current?.holdSlide(); }} onPointerUp={() => engineRef.current?.releaseSlide()} onPointerCancel={() => engineRef.current?.releaseSlide()} onContextMenu={e => e.preventDefault()}>⬇️ <b>กดค้างสไลด์</b></button></div></section>}
     {page === 'result' && <section className="result-card"><div className="result-icon">{result.cleared ? '🏆' : '💫'}</div><p className="eyebrow">ADVENTURE REPORT</p><h1>{result.message || 'จบการผจญภัย'}</h1><div className="result-score"><small>คะแนนรวม</small><strong>{hud.score.toLocaleString()}</strong></div><div className="result-stats"><div><b>{hud.distance}</b><small>ระยะทาง (m)</small></div><div><b>{hud.shells}</b><small>กระดอง</small></div><div><b>{hud.combo}</b><small>COMBO</small></div><div><b>{hud.hearts}</b><small>หัวใจเหลือ</small></div></div>{notice && <p className="status-note">{notice}</p>}<div className="result-actions"><button className="primary-btn" onClick={startGame}>เล่นอีกครั้ง ↻</button><button className="soft-btn" onClick={() => setPage('stages')}>เลือกด่าน</button><button className="text-btn" onClick={() => setPage('home')}>กลับหน้าแรก</button></div></section>}
     {page === 'rank' && <section className="page-section"><div className="section-heading"><div><p className="eyebrow">HALL OF FAME</p><h1>🏆 ตารางคะแนน</h1></div><button className="back-btn" onClick={() => setPage('home')}>← กลับ</button></div><div className="rank-panel"><div className="rank-head"><span>อันดับ / ผู้เล่น</span><span>คะแนน</span></div>{scores.length ? scores.map((item, i) => <div className="rank-row" key={item.id}><span><b className={`rank-number rank-${i + 1}`}>{i + 1}</b><span>{item.player_name}<small>ด่าน {item.stage} · {item.mode === 'challenge' ? 'ท้าทาย' : 'ปกติ'}</small></span></span><strong>{Number(item.score).toLocaleString()}</strong></div>) : <div className="empty-rank">{supabase ? 'ยังไม่มีคะแนน ลองลงสนามเป็นคนแรกเลย!' : 'ยังไม่ได้เชื่อมต่อ Supabase'}</div>}</div><div className="rank-actions"><button className="soft-btn" onClick={loadScores}>↻ รีเฟรชคะแนน</button><button className="soft-btn" onClick={changeName}>👤 เปลี่ยนชื่อผู้เล่น ({playerName})</button></div></section>}
     <footer className="footer">Made with ♡ for KINGMAN · KINGMAN ADVENTURE</footer>
