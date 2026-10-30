@@ -115,7 +115,14 @@ function App() {
       for (let i = 0; i < count; i++) particles.push({ x, y, vx: (Math.random() - .5) * 5, vy: (Math.random() - .8) * 5, life: 25 + Math.random() * 20, color, r: 2 + Math.random() * 4 });
     };
     const jump = (power = 'normal') => {
-      if (!alive || !player.onGround || player.slide > 0) return;
+      if (!alive || player.slide > 0) return;
+      // A second tap upgrades an active upward jump instead of delaying the first tap.
+      if (power === 'high' && !player.onGround && player.vy < 0) {
+        player.vy = Math.min(player.vy, -18);
+        emit(player.x + 25, player.y + player.h, '#fff2b0', 5);
+        return;
+      }
+      if (!player.onGround) return;
       player.vy = power === 'high' ? -18 : -13.8;
       player.onGround = false;
       emit(player.x + 25, player.y + player.h, '#fff2b0', 5);
@@ -328,7 +335,6 @@ function App() {
       if (e.code === 'ArrowDown' || e.code === 'KeyS') slide();
     };
     let pointerStart = null;
-    let tapTimer = null;
     let lastTapAt = 0;
     let holdTimer = null;
     let holdingSlide = false;
@@ -348,13 +354,9 @@ function App() {
         if (Math.abs(dy) > Math.abs(dx)) { if (dy < 0) jump(); else slide(); }
       } else if (duration < 190) {
         const now = performance.now();
-        if (now - lastTapAt < 280) {
-          if (tapTimer) window.clearTimeout(tapTimer);
-          tapTimer = null; lastTapAt = 0; jump('high');
-        } else {
-          lastTapAt = now;
-          tapTimer = window.setTimeout(() => { jump('normal'); tapTimer = null; lastTapAt = 0; }, 280);
-        }
+        if (now - lastTapAt < 280) jump('high');
+        else jump('normal');
+        lastTapAt = now;
       }
       pointerStart = null;
     };
@@ -368,7 +370,6 @@ function App() {
       canvas.removeEventListener('pointerdown', onPointerDown);
       canvas.removeEventListener('pointerup', onPointerUp);
       canvas.removeEventListener('pointercancel', onPointerUp);
-      if (tapTimer) window.clearTimeout(tapTimer);
       if (holdTimer) window.clearTimeout(holdTimer);
       engineRef.current = null;
     };
