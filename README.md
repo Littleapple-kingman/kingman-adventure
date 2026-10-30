@@ -33,3 +33,9 @@
 
 ## หมายเหตุ
 Leaderboard จะทำงานเมื่อ Supabase URL และ anon/publishable key ถูกตั้งค่า และตาราง/Policy รองรับตาม `supabase.sql` แล้ว หากโปรเจกต์เดิมมี policy ที่เข้มงวดกว่า อย่ารัน SQL ซ้ำโดยไม่ตรวจสอบก่อน
+
+
+## Version 3.3 – Easier touch controls
+- Jump is triggered immediately when the screen is touched (no waiting for touch release).
+- Double tap boosts an active jump; swipe down or hold the slide button to slide.
+- Normal mode speed and obstacle frequency are reduced, and collision hitboxes are more forgiving.
