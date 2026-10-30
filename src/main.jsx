@@ -114,9 +114,9 @@ function App() {
     const emit = (x, y, color, count = 8) => {
       for (let i = 0; i < count; i++) particles.push({ x, y, vx: (Math.random() - .5) * 5, vy: (Math.random() - .8) * 5, life: 25 + Math.random() * 20, color, r: 2 + Math.random() * 4 });
     };
-    const jump = () => {
+    const jump = (power = 'normal') => {
       if (!alive || !player.onGround || player.slide > 0) return;
-      player.vy = -13.8;
+      player.vy = power === 'high' ? -18 : -13.8;
       player.onGround = false;
       emit(player.x + 25, player.y + player.h, '#fff2b0', 5);
     };
@@ -124,7 +124,12 @@ function App() {
       if (!alive || !player.onGround) return;
       player.slide = 34;
     };
-    engineRef.current = { jump, slide };
+    const holdSlide = () => {
+      if (!alive || !player.onGround) return;
+      player.slide = 9999;
+    };
+    const releaseSlide = () => { if (player.slide > 0) player.slide = Math.min(player.slide, 8); };
+    engineRef.current = { jump, slide, holdSlide, releaseSlide };
 
     const drawFallbackKingman = (x, y, w, h, sliding) => {
       ctx.save();
@@ -258,8 +263,25 @@ function App() {
             const dx = (player.x + 25) - o.x; const dy = (player.y + 30) - bobY;
             if (Math.hypot(dx, dy) < 190) { o.x += dx * .11; o.y += dy * .11; }
           }
-          const symbols = { gem: '💎', shell: '🐚', heart: '❤️', magnet: '🧲' };
-          ctx.font = '27px system-ui'; ctx.textAlign = 'center'; ctx.fillText(symbols[o.type], o.x + 15, bobY + 25);
+          const symbols = { gem: '💎', heart: '❤️', magnet: '🧲' };
+          if (o.type === 'shell') {
+            // Turtle shell collectible: domed carapace with segmented scutes and a thick rim.
+            const sx = o.x + 15, sy = bobY + 16;
+            ctx.save(); ctx.translate(sx, sy);
+            // lower rim / plastron
+            ctx.fillStyle = '#e8bd78'; ctx.strokeStyle = '#69452f'; ctx.lineWidth = 2;
+            ctx.beginPath(); ctx.moveTo(-15, 3); ctx.quadraticCurveTo(-13, 13, 0, 14); ctx.quadraticCurveTo(13, 13, 15, 3); ctx.lineTo(12, 7); ctx.quadraticCurveTo(0, 12, -12, 7); ctx.closePath(); ctx.fill(); ctx.stroke();
+            // domed green-brown carapace
+            const shellGrad = ctx.createLinearGradient(0, -15, 0, 8);
+            shellGrad.addColorStop(0, '#9bd66b'); shellGrad.addColorStop(.48, '#568d43'); shellGrad.addColorStop(1, '#315f39');
+            ctx.fillStyle = shellGrad; ctx.strokeStyle = '#294d32'; ctx.lineWidth = 2.2;
+            ctx.beginPath(); ctx.moveTo(-15, 5); ctx.quadraticCurveTo(-17, -11, 0, -15); ctx.quadraticCurveTo(17, -11, 15, 5); ctx.quadraticCurveTo(0, 11, -15, 5); ctx.closePath(); ctx.fill(); ctx.stroke();
+            // central and side scutes make it unmistakably a turtle shell
+            ctx.strokeStyle = '#c5df83'; ctx.lineWidth = 1.5;
+            ctx.beginPath(); ctx.moveTo(0, -13); ctx.lineTo(0, 7); ctx.moveTo(-10, -7); ctx.lineTo(-4, -2); ctx.lineTo(-7, 5); ctx.moveTo(10, -7); ctx.lineTo(4, -2); ctx.lineTo(7, 5); ctx.moveTo(-4, -2); ctx.lineTo(4, -2); ctx.stroke();
+            ctx.fillStyle = 'rgba(232,245,171,.55)'; ctx.beginPath(); ctx.ellipse(-5, -9, 3, 1.5, -.35, 0, Math.PI * 2); ctx.fill();
+            ctx.restore();
+          } else { ctx.font = '27px system-ui'; ctx.textAlign = 'center'; ctx.fillText(symbols[o.type], o.x + 15, bobY + 25); }
           if (!o.hit && rectHit(pbox, { x: o.x + 2, y: bobY + 2, w: 26, h: 26 })) {
             o.hit = true; combo += 1; comboTimer = 150;
             const bonus = Math.min(combo, 20) * 3;
@@ -305,13 +327,36 @@ function App() {
       if (e.code === 'Space' || e.code === 'ArrowUp' || e.code === 'KeyW') jump();
       if (e.code === 'ArrowDown' || e.code === 'KeyS') slide();
     };
-    let touchStart = null;
-    const onPointerDown = e => { touchStart = { x: e.clientX, y: e.clientY }; };
+    let pointerStart = null;
+    let tapTimer = null;
+    let lastTapAt = 0;
+    let holdTimer = null;
+    let holdingSlide = false;
+    const onPointerDown = e => {
+      pointerStart = { x: e.clientX, y: e.clientY, at: performance.now() };
+      holdingSlide = false;
+      holdTimer = window.setTimeout(() => { holdingSlide = true; holdSlide(); }, 190);
+    };
     const onPointerUp = e => {
-      if (!touchStart) return;
-      const dx = e.clientX - touchStart.x; const dy = e.clientY - touchStart.y;
-      if (Math.abs(dy) > 22 && Math.abs(dy) > Math.abs(dx)) { if (dy < 0) jump(); else slide(); }
-      touchStart = null;
+      if (!pointerStart) return;
+      if (holdTimer) window.clearTimeout(holdTimer);
+      const dx = e.clientX - pointerStart.x; const dy = e.clientY - pointerStart.y;
+      const duration = performance.now() - pointerStart.at;
+      if (holdingSlide) { releaseSlide(); }
+      else if (Math.abs(dx) > 22 || Math.abs(dy) > 22) {
+        // Retain swipe-up as a convenience; swipe-down briefly triggers slide.
+        if (Math.abs(dy) > Math.abs(dx)) { if (dy < 0) jump(); else slide(); }
+      } else if (duration < 190) {
+        const now = performance.now();
+        if (now - lastTapAt < 280) {
+          if (tapTimer) window.clearTimeout(tapTimer);
+          tapTimer = null; lastTapAt = 0; jump('high');
+        } else {
+          lastTapAt = now;
+          tapTimer = window.setTimeout(() => { jump('normal'); tapTimer = null; lastTapAt = 0; }, 280);
+        }
+      }
+      pointerStart = null;
     };
     window.addEventListener('keydown', onKey);
     canvas.addEventListener('pointerdown', onPointerDown);
@@ -323,6 +368,8 @@ function App() {
       canvas.removeEventListener('pointerdown', onPointerDown);
       canvas.removeEventListener('pointerup', onPointerUp);
       canvas.removeEventListener('pointercancel', onPointerUp);
+      if (tapTimer) window.clearTimeout(tapTimer);
+      if (holdTimer) window.clearTimeout(holdTimer);
       engineRef.current = null;
     };
   }, [page, stage, mode, finishGame]);
@@ -337,12 +384,12 @@ function App() {
     <header className="topbar"><button className="brand" onClick={() => setPage('home')}><span className="brand-crown">♛</span><span>KINGMAN <b>ADVENTURE</b></span></button><div className="wallet"><span className="wallet-pill">💎 {totalGems}</span><span className="wallet-pill">🏆 {best.toLocaleString()}</span></div></header>
     {page === 'home' && <>
       <section className="hero-card"><div className="hero-sparkle">✦　✧　✦</div><div className="hero-mascot">👑</div><p className="eyebrow">A LITTLE HERO, A BIG ADVENTURE</p><h1>KINGMAN <span>ADVENTURE</span></h1><p className="hero-copy">ออกวิ่งไปด้วยกัน กระโดดให้สุด สไลด์ให้ไว<br/>แล้วเก็บสมบัติให้เต็มกระเป๋า!</p><div className="hero-actions"><button className="primary-btn" onClick={() => setPage('stages')}>เริ่มผจญภัย <span>➜</span></button><button className="soft-btn" onClick={() => setPage('rank')}>🏆 ตารางคะแนน</button></div></section>
-      <section className="feature-grid"><article className="feature-card"><span>↗</span><b>กระโดด & สไลด์</b><small>หลบอุปสรรคในเส้นทาง</small></article><article className="feature-card"><span>💎</span><b>เก็บสมบัติ</b><small>สะสมเพชรและกระดอง</small></article><article className="feature-card"><span>⚡</span><b>COMBO</b><small>เก็บต่อเนื่องรับโบนัส</small></article></section>
-      <section className="how-card"><div><p className="eyebrow">HOW TO PLAY</p><h2>วิธีควบคุม</h2></div><div className="how-controls"><span><kbd>SPACE</kbd> / <kbd>↑</kbd> กระโดด</span><span><kbd>↓</kbd> สไลด์</span><span>📱 ปัดขึ้น / ปัดลงบนหน้าจอ</span></div></section>
+      <section className="feature-grid"><article className="feature-card"><span>↗</span><b>กระโดด & สไลด์</b><small>หลบอุปสรรคในเส้นทาง</small></article><article className="feature-card"><span>💎</span><b>เก็บสมบัติ</b><small>สะสมเพชรและกระดองเต่า</small></article><article className="feature-card"><span>⚡</span><b>COMBO</b><small>เก็บต่อเนื่องรับโบนัส</small></article></section>
+      <section className="how-card"><div><p className="eyebrow">HOW TO PLAY</p><h2>วิธีควบคุม</h2></div><div className="how-controls"><span><kbd>SPACE</kbd> / <kbd>↑</kbd> กระโดด</span><span><kbd>↓</kbd> สไลด์</span><span>📱 แตะ 1 ครั้งกระโดด · แตะ 2 ครั้งกระโดดสูง · กดค้างสไลด์</span></div></section>
       {!supabase && <p className="status-note">โหมดเล่นในเครื่องพร้อมใช้งาน · ตารางคะแนนออนไลน์จะเปิดเมื่อเชื่อม Supabase</p>}
     </>}
     {page === 'stages' && <section className="page-section"><div className="section-heading"><div><p className="eyebrow">CHOOSE YOUR WORLD</p><h1>เลือกด่านผจญภัย</h1></div><button className="back-btn" onClick={() => setPage('home')}>← กลับ</button></div><div className="mode-switch"><button className={mode === 'normal' ? 'selected' : ''} onClick={() => setMode('normal')}>🌼 โหมดปกติ <small>หัวใจ 3 ดวง</small></button><button className={mode === 'challenge' ? 'selected challenge' : ''} onClick={() => setMode('challenge')}>🔥 โหมดท้าทาย <small>เร็วขึ้น · หัวใจ 2 ดวง</small></button></div><div className="stage-grid">{STAGES.map((s, i) => <article className={`stage-card stage-${i + 1}`} key={s.name}><div className="stage-art">{s.icon}</div><div className="stage-meta"><span>WORLD {String(i + 1).padStart(2, '0')}</span>{i + 1 <= unlocked ? <b>UNLOCKED</b> : <b className="locked">🔒 LOCKED</b>}</div><h3>{s.name}</h3><p>{i === 0 ? 'เริ่มต้นการเดินทางในป่ามหัศจรรย์' : i === 1 ? 'ระวังผลึกคริสตัลที่แวววาว' : i === 2 ? 'ฝ่าความร้อนแรงของภูเขาไฟ' : i === 3 ? 'วิ่งผ่านดินแดนหิมะเย็นฉ่ำ' : 'ผจญภัยสู่ปราสาทแห่ง KINGMAN'}</p><button disabled={i + 1 > unlocked} onClick={() => { setStage(i + 1); startGame(); }}>{i + 1 <= unlocked ? 'เข้าเล่นด่าน →' : 'ผ่านด่านก่อนหน้าเพื่อปลดล็อก'}</button></article>)}</div></section>}
-    {page === 'play' && <section className="play-section"><div className="play-heading"><div><p className="eyebrow">{mode === 'normal' ? '🌼 NORMAL MODE' : '🔥 CHALLENGE MODE'}</p><h2>{stageData.icon} {stageData.name}</h2></div><button className="exit-btn" onClick={() => { setPage('result'); setResult({ message: 'ออกจากการผจญภัย', cleared: false }); }}>ออกจากเกม</button></div><div className="game-frame"><div className="game-hud"><span>❤️ {hud.hearts}</span><span>🐚 {hud.shells}</span><span>⭐ {hud.score.toLocaleString()}</span><span>⚡ x{hud.combo}</span><span>📏 {hud.distance} m</span></div><canvas ref={canvasRef} className="game-canvas" aria-label="KINGMAN วิ่งผจญภัย"></canvas><div className="game-hint">ปัดขึ้นเพื่อกระโดด · ปัดลงเพื่อสไลด์</div></div><div className="touch-controls"><button onClick={() => engineRef.current?.jump()}>⬆️ <b>กระโดด</b></button><button onClick={() => engineRef.current?.slide()}>⬇️ <b>สไลด์</b></button></div></section>}
+    {page === 'play' && <section className="play-section"><div className="play-heading"><div><p className="eyebrow">{mode === 'normal' ? '🌼 NORMAL MODE' : '🔥 CHALLENGE MODE'}</p><h2>{stageData.icon} {stageData.name}</h2></div><button className="exit-btn" onClick={() => { setPage('result'); setResult({ message: 'ออกจากการผจญภัย', cleared: false }); }}>ออกจากเกม</button></div><div className="game-frame"><div className="game-hud"><span>❤️ {hud.hearts}</span><span>🐢 {hud.shells}</span><span>⭐ {hud.score.toLocaleString()}</span><span>⚡ x{hud.combo}</span><span>📏 {hud.distance} m</span></div><canvas ref={canvasRef} className="game-canvas" aria-label="KINGMAN วิ่งผจญภัย"></canvas><div className="game-hint">แตะ 1 ครั้ง = กระโดด · แตะ 2 ครั้ง = กระโดดสูง · กดค้าง = สไลด์</div></div><div className="touch-controls"><button onClick={() => engineRef.current?.jump('normal')}>⬆️ <b>กระโดด</b></button><button onPointerDown={e => { e.currentTarget.setPointerCapture(e.pointerId); engineRef.current?.holdSlide(); }} onPointerUp={() => engineRef.current?.releaseSlide()} onPointerCancel={() => engineRef.current?.releaseSlide()} onContextMenu={e => e.preventDefault()}>⬇️ <b>กดค้างสไลด์</b></button></div></section>}
     {page === 'result' && <section className="result-card"><div className="result-icon">{result.cleared ? '🏆' : '💫'}</div><p className="eyebrow">ADVENTURE REPORT</p><h1>{result.message || 'จบการผจญภัย'}</h1><div className="result-score"><small>คะแนนรวม</small><strong>{hud.score.toLocaleString()}</strong></div><div className="result-stats"><div><b>{hud.distance}</b><small>ระยะทาง (m)</small></div><div><b>{hud.shells}</b><small>กระดอง</small></div><div><b>{hud.combo}</b><small>COMBO</small></div><div><b>{hud.hearts}</b><small>หัวใจเหลือ</small></div></div>{notice && <p className="status-note">{notice}</p>}<div className="result-actions"><button className="primary-btn" onClick={startGame}>เล่นอีกครั้ง ↻</button><button className="soft-btn" onClick={() => setPage('stages')}>เลือกด่าน</button><button className="text-btn" onClick={() => setPage('home')}>กลับหน้าแรก</button></div></section>}
     {page === 'rank' && <section className="page-section"><div className="section-heading"><div><p className="eyebrow">HALL OF FAME</p><h1>🏆 ตารางคะแนน</h1></div><button className="back-btn" onClick={() => setPage('home')}>← กลับ</button></div><div className="rank-panel"><div className="rank-head"><span>อันดับ / ผู้เล่น</span><span>คะแนน</span></div>{scores.length ? scores.map((item, i) => <div className="rank-row" key={item.id}><span><b className={`rank-number rank-${i + 1}`}>{i + 1}</b><span>{item.player_name}<small>ด่าน {item.stage} · {item.mode === 'challenge' ? 'ท้าทาย' : 'ปกติ'}</small></span></span><strong>{Number(item.score).toLocaleString()}</strong></div>) : <div className="empty-rank">{supabase ? 'ยังไม่มีคะแนน ลองลงสนามเป็นคนแรกเลย!' : 'ยังไม่ได้เชื่อมต่อ Supabase'}</div>}</div><div className="rank-actions"><button className="soft-btn" onClick={loadScores}>↻ รีเฟรชคะแนน</button><button className="soft-btn" onClick={changeName}>👤 เปลี่ยนชื่อผู้เล่น ({playerName})</button></div></section>}
     <footer className="footer">Made with ♡ for KINGMAN · KINGMAN ADVENTURE</footer>
